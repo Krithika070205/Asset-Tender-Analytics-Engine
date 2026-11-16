@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Indian Corporate Asset & Tender Analytics Engine</title>
-    <script src="https://jsdelivr.net"></script>
-    <script src="https://cloudflare.com"></script>
     <script src="https://cloudflare.com"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
@@ -45,7 +43,7 @@
         .kpi-val { font-size: 19px; font-weight: 900; }
         .bottom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
         .chart-box, .advice-box { background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 16px; }
-        .advice-box h4 { font-size: 16px; font-weight: 800; margin-bottom: 10px; color: #0f172a; }
+        .advice-box h4, .chart-box h4 { font-size: 16px; font-weight: 800; margin-bottom: 12px; color: #0f172a; text-align: center; }
         .advice-content { font-size: 15px; line-height: 1.6; font-weight: 600; color: #1e293b; white-space: pre-line; }
     </style>
 </head>
@@ -73,7 +71,7 @@
             <h3>3. System Architecture</h3>
             <ul>
                 <li><span class="pink-accent">ML Classifier Core:</span> Powered by <strong>XGBoost Algorithm</strong> trained on <strong>20,640 Records</strong> (<strong>92.76% Accuracy</strong>).</li>
-                <li><span class="pink-accent">Dual Input Engine:</span> Extracts parameters from <strong>.pdf, .xlsx</strong> files or direct manual inputs.</li>
+                <li><span class="pink-accent">Dual Input Engine:</span> Extracts parameters from <strong>.xlsx, .txt</strong> files or direct manual inputs.</li>
                 <li><span class="pink-accent">AI Strategy Advisor:</span> Generates actionable negotiation advice and risk visualizations.</li>
             </ul>
         </div>
@@ -82,7 +80,7 @@
     <div class="workflow-box">
         <h3 class="workflow-title">4. How It Works: 3-Step User Workflow</h3>
         <div class="grid-3">
-            <div class="step-card"><div class="step-head">Step 1: Upload or Enter Data</div><div class="step-desc">Upload a PDF/Excel report OR manually enter Location, Size (Sq.Ft) & Quoted Bid Price below.</div></div>
+            <div class="step-card"><div class="step-head">Step 1: Upload or Enter Data</div><div class="step-desc">Upload an Excel/Text report OR manually enter Location, Size (Sq.Ft) & Quoted Bid Price below.</div></div>
             <div class="step-card"><div class="step-head">Step 2: AI Forensic Processing</div><div class="step-desc">Extracts key metrics, applies regional tax rules & evaluates bid fairness against ML benchmarks.</div></div>
             <div class="step-card"><div class="step-head">Step 3: Review Results & Advice</div><div class="step-desc">Inspect the 11 KPI cards, Risk Matrix graph, and AI Strategic Decision Advice below.</div></div>
         </div>
@@ -90,9 +88,9 @@
 
     <div class="upload-row">
         <label class="file-label" id="fileLabel" for="fileInput">
-            Step 1: Click Here to Upload Tender Report (.pdf, .xlsx)
+            Step 1: Click Here to Upload Tender Report (.xlsx, .txt)
         </label>
-        <input type="file" id="fileInput" accept=".pdf,.xlsx" style="display:none" onchange="handleFileUpload(event)">
+        <input type="file" id="fileInput" accept=".xlsx,.txt,.csv" style="display:none" onchange="handleFileUpload(event)">
         <button class="clear-btn" type="button" onclick="clearAll()">Clear Uploaded File</button>
     </div>
 
@@ -126,9 +124,12 @@
     <h2 class="results-header">Forensic Analytics & Valuation Results</h2>
     <div id="kpiContainer" class="kpi-grid"></div>
     <div class="bottom-grid" id="bottomSection" style="display:none;">
-        <div class="chart-box"><canvas id="riskChart"></canvas></div>
+        <div class="chart-box">
+            <h4>AI Predictive Risk & Accuracy Matrix</h4>
+            <div id="svgChartContainer"></div>
+        </div>
         <div class="advice-box">
-            <h4>AI Executive Strategic Decision Advice</h4>
+            <h4 style="text-align:left;">AI Executive Strategic Decision Advice</h4>
             <div id="adviceText" class="advice-content"></div>
         </div>
     </div>
