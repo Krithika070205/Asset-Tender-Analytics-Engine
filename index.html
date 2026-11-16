@@ -89,11 +89,11 @@
     </div>
 
     <div class="upload-row">
-        <label class="file-label" id="fileLabel">
+        <label class="file-label" id="fileLabel" for="fileInput">
             Step 1: Click Here to Upload Tender Report (.pdf, .xlsx)
-            <input type="file" id="fileInput" accept=".pdf,.xlsx" style="display:none" onchange="handleFileUpload(event)">
         </label>
-        <button class="clear-btn" onclick="clearAll()">Clear Uploaded File</button>
+        <input type="file" id="fileInput" accept=".pdf,.xlsx" style="display:none" onchange="handleFileUpload(event)">
+        <button class="clear-btn" type="button" onclick="clearAll()">Clear Uploaded File</button>
     </div>
 
     <div class="divider">--- OR Enter Property & Quote Details Manually Below ---</div>
@@ -121,7 +121,7 @@
         </div>
     </div>
 
-    <button class="submit-btn" onclick="runManualAnalysis()">Execute Forensic Analysis</button>
+    <button class="submit-btn" type="button" onclick="runManualAnalysis()">Execute Forensic Analysis</button>
 
     <h2 class="results-header">Forensic Analytics & Valuation Results</h2>
     <div id="kpiContainer" class="kpi-grid"></div>
@@ -132,3 +132,6 @@
             <div id="adviceText" class="advice-content"></div>
         </div>
     </div>
+</div>
+
+<script>
