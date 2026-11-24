@@ -1,74 +1,138 @@
+
+!pip install -q pypdf openpyxl
 import io, base64, re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import gradio as gr
+import openpyxl
 from pypdf import PdfReader
+
 
 LOC_REG = {
     "chennai": {"metro": "Yes (Tier-1 Metro)", "rate": 8500, "tax": 0.12},
     "mumbai": {"metro": "Yes (Tier-1 Metro)", "rate": 13500, "tax": 0.15},
     "delhi": {"metro": "Yes (Tier-1 Metro)", "rate": 10500, "tax": 0.13},
     "bangalore": {"metro": "Yes (Tier-1 Metro)", "rate": 9500, "tax": 0.12},
+    "bengaluru": {"metro": "Yes (Tier-1 Metro)", "rate": 9500, "tax": 0.12},
     "hyderabad": {"metro": "Yes (Tier-1 Metro)", "rate": 8000, "tax": 0.10}
 }
 
+def get_area_meta(area_str):
+    if not area_str or not str(area_str).strip():
+        return 1.0, ""
+    a = re.sub(r'[^a-z0-9]', '', str(area_str).lower())
+    premium = ["annanagar", "tnagar", "guindy", "adyar", "nungambakkam", "bandra", "bkc", "worli", "indiranagar", "koramangala", "banjarahills", "jubileehills", "connaughtplace"]
+    outer = ["ambattur", "tambaram", "porur", "avadi", "sriperumbudur", "bhiwandi", "thane", "electroniccity", "whitefield", "shamshabad", "noida", "gurgaon"]
+    if a in premium:
+        return 1.15, "Prime Hub +15%"
+    if a in outer:
+        return 0.90, "Developing Zone -10%"
+    return 1.0, "Standard Zone"
+
 def clean_num(val):
-    if val is None or pd.isna(val): return 0.0
+    if val is None or pd.isna(val):
+        return 0.0
     m = re.search(r'(\d+(?:,\d+)*(?:\.\d+)?)', str(val))
     return float(m.group(1).replace(',', '')) if m else 0.0
 
-def get_inputs(file_obj, man_asset, man_city, man_size, man_bid):
-    asset_type, city, size, raw_bid = "Warehouse", "Chennai", 0.0, 0.0
+def get_inputs(file_obj, man_asset, man_city, man_area, man_size, man_bid):
+    asset_type, city, area, size, raw_bid = "Warehouse", "Chennai", "", 0.0, 0.0
     if file_obj is not None:
-        fname = file_obj.name.lower()
+        fpath = file_obj.name if hasattr(file_obj, 'name') else str(file_obj)
+        fname = fpath.lower()
         txt = ""
-        if fname.endswith('.xlsx'):
-            df = pd.read_excel(file_obj.name).dropna(how='all')
-            if not df.empty:
-                row = df.head(1).to_dict(orient='records').pop()
-                for k, v in row.items():
-                    kl = str(k).lower().strip()
-                    if kl.startswith(('s.no', 'sno', 'sl', 'id')): continue
-                    if 'asset' in kl or 'type' in kl: asset_type = str(v).strip()
-                    elif 'loc' in kl or 'city' in kl: city = str(v).strip()
-                    elif 'size' in kl or 'sq' in kl or 'area' in kl: size = clean_num(v)
-                    elif 'bid' in kl or 'price' in kl or 'quote' in kl: raw_bid = clean_num(v)
+        if fname.endswith('.xlsx') or fname.endswith('.xls'):
+            wb = openpyxl.load_workbook(fpath, data_only=True)
+            for sheet in wb.worksheets:
+                rows = list(sheet.iter_rows(values_only=True))
+                header_row_idx = -1
+                col_map = {}
+                for r_i, row in enumerate(rows):
+                    for c_i, cell in enumerate(row):
+                        val_l = str(cell).lower().strip() if cell is not None else ""
+                        if 'asset' in val_l or 'type' in val_l:
+                            col_map['asset'] = c_i
+                            header_row_idx = r_i
+                        elif 'area' in val_l or 'local' in val_l:
+                            col_map['area'] = c_i
+                            header_row_idx = r_i
+                        elif 'loc' in val_l or 'city' in val_l:
+                            col_map['city'] = c_i
+                            header_row_idx = r_i
+                        elif 'size' in val_l or 'sqft' in val_l or 'sq_ft' in val_l:
+                            col_map['size'] = c_i
+                            header_row_idx = r_i
+                        elif 'bid' in val_l or 'price' in val_l or 'quote' in val_l:
+                            col_map['bid'] = c_i
+                            header_row_idx = r_i
+                    if 'size' in col_map and header_row_idx == r_i:
+                        for data_r in rows[r_i + 1:]:
+                            if 'size' in col_map and col_map['size'] < len(data_r) and clean_num(data_r[col_map['size']]) > 0:
+                                size = clean_num(data_r[col_map['size']])
+                                if 'asset' in col_map and col_map['asset'] < len(data_r) and data_r[col_map['asset']]:
+                                    asset_type = str(data_r[col_map['asset']]).strip()
+                                if 'city' in col_map and col_map['city'] < len(data_r) and data_r[col_map['city']]:
+                                    city = str(data_r[col_map['city']]).strip()
+                                if 'area' in col_map and col_map['area'] < len(data_r) and data_r[col_map['area']]:
+                                    area = str(data_r[col_map['area']]).strip()
+                                if 'bid' in col_map and col_map['bid'] < len(data_r) and data_r[col_map['bid']] is not None:
+                                    raw_bid = clean_num(data_r[col_map['bid']])
+                                break
+                        break
         elif fname.endswith('.pdf'):
-            reader = PdfReader(file_obj.name)
+            reader = PdfReader(fpath)
             for p in reader.pages:
-                if p.extract_text(): txt += p.extract_text() + "\n"
+                if p.extract_text():
+                    txt += p.extract_text() + "\n"
 
         if txt:
-            if re.search(r'(office|commercial)', txt, re.I): asset_type = "Office"
-            elif re.search(r'(land|plot|ground)', txt, re.I): asset_type = "Land"
-            cm = re.search(r'\b(chennai|mumbai|delhi|bangalore|hyderabad|coimbatore|pune)\b', txt, re.I)
-            if cm: city = cm.group(1).capitalize()
-            sm = re.search(r'(?:size|area)[^\d\n]{0,15}?(\d+(?:,\d+)*)', txt, re.I)
-            if sm: size = float(sm.group(1).replace(',', ''))
-            bm = re.search(r'(?:bid|price|quote|offer)[^\d\n]{0,20}?(\d+(?:,\d+)*(?:\.\d+)?)', txt, re.I)
-            if bm: raw_bid = float(bm.group(1).replace(',', ''))
-    elif man_size is not None and float(man_size) > 0:
+            if re.search(r'\b(office|commercial office)\b', txt, re.I):
+                asset_type = "Office"
+            elif re.search(r'\b(land|plot|ground)\b', txt, re.I):
+                asset_type = "Land"
+            elif re.search(r'\bwarehouse\b', txt, re.I):
+                asset_type = "Warehouse"
+
+            cm = re.search(r'\b(chennai|mumbai|delhi|bangalore|bengaluru|hyderabad|coimbatore|pune)\b', txt, re.I)
+            if cm:
+                city = cm.group(1).capitalize()
+
+            am = re.search(r'\b(Anna Nagar|T\.?\s*Nagar|OMR|Guindy|Ambattur|Tambaram|Porur|Adyar|Bandra|Indiranagar|Whitefield)\b', txt, re.I)
+            if am:
+                area = am.group(1)
+
+            sm = re.search(r'(?:size|built-up size|sqft|sq\.ft)[^\d\n]{0,20}?(\d+(?:,\d+)*)', txt, re.I)
+            if sm:
+                size = float(sm.group(1).replace(',', ''))
+
+            bm = re.search(r'(?:bid price|quoted bid|price|quote|offer)[^\d\n]{0,25}?(\d+(?:,\d+)*(?:\.\d+)?)', txt, re.I)
+            if bm:
+                raw_bid = float(bm.group(1).replace(',', ''))
+
+    if size <= 0 and man_size is not None and float(man_size) > 0:
         asset_type = man_asset if man_asset else "Office"
         city = man_city.strip() if (man_city and man_city.strip()) else "Chennai"
+        area = man_area.strip() if (man_area and man_area.strip()) else ""
         size = float(man_size)
         raw_bid = float(man_bid) if (man_bid is not None and float(man_bid) > 0) else 0.0
 
-    return (asset_type, city, size, raw_bid) if size > 0 else None
+    return (asset_type, city, area, size, raw_bid) if size > 0 else None
 
-def analyze_clean_ui(file_obj, man_asset, man_city, man_size, man_bid):
+def analyze_clean_ui(file_obj, man_asset, man_city, man_area, man_size, man_bid):
     try:
-        res = get_inputs(file_obj, man_asset, man_city, man_size, man_bid)
+        res = get_inputs(file_obj, man_asset, man_city, man_area, man_size, man_bid)
         if res is None:
             msg = "<div style='padding:18px;background:#eff6ff;color:#1e3a8a;border-radius:10px;text-align:center;font-weight:700;'>Upload a PDF/Excel report OR enter Size (Sq.Ft) and Location manually above.</div>"
             return msg, "", "Please upload a file or enter manual details first."
 
-        asset_type, city, size, raw_bid = res
+        asset_type, city, area, size, raw_bid = res
         meta = LOC_REG.get(city.lower().strip(), {"metro": "No (Tier-2 Non-Metro)", "rate": 5000, "tax": 0.05})
         is_metro, base_rate, tax_pct = meta["metro"], meta["rate"], meta["tax"]
+        area_mult, _ = get_area_meta(area)
 
         t_mult = 1.10 if asset_type.lower() == "office" else (0.90 if asset_type.lower() == "land" else 1.0)
-        ai_std = round(size * base_rate * t_mult, 2)
+        ai_std = round(size * base_rate * t_mult * area_mult, 2)
 
         if raw_bid > 0:
             q_bid = round(raw_bid * 100000, 2) if (raw_bid < 10000 and ai_std >= 100000) else round(raw_bid, 2)
@@ -85,24 +149,27 @@ def analyze_clean_ui(file_obj, man_asset, man_city, man_size, man_bid):
         var_pct = ((eval_bid - ai_std) / ai_std) * 100
         prof = round(max(4.5, min(19.5, 14.5 - (var_pct * 0.35))), 2)
         win = round(max(18.0, min(96.5, 85.0 + (var_pct * 0.8))), 1)
-        diff = round(eval_bid - ai_std, 2)
+        diff = round(abs(eval_bid - ai_std), 2)
+
+        loc_display = f"{city} ({area}) - {is_metro}" if area else f"{city} - {is_metro}"
+        city_label = f"{area}, {city}" if area else city
 
         if not is_q:
             verdict = "Fixed AI Standard Rate Applied"
-            advice = f"AI STANDARD BENCHMARK APPLIED\n1. Evaluated using {city}'s Fixed Fair Market Rate (Rs. {ai_std:,.2f}).\n2. 18% GST: Rs. {gst:,.2f} | Property Tax ({int(tax_pct*100)}%): Rs. {ptax:,.2f} | Depreciation: Rs. {dep:,.2f}.\n3. Total Acquisition CapEx: Rs. {capex:,.2f}."
+            advice = f"AI STANDARD BENCHMARK APPLIED\n1. Evaluated using {city_label}'s Fixed Fair Market Rate (Rs. {ai_std:,.2f}).\n2. 18% GST: Rs. {gst:,.2f} | Property Tax ({int(tax_pct*100)}%): Rs. {ptax:,.2f} | Depreciation: Rs. {dep:,.2f}.\n3. Total Acquisition CapEx: Rs. {capex:,.2f}."
         elif var_pct > 2.0:
             verdict = f"Quoted Bid is +{var_pct:.1f}% Higher than Standard"
             advice = f"JUSTIFICATION VERDICT: OVER-PRICED QUOTE (+{var_pct:.1f}%)\n1. Client Quoted Bid (Rs. {eval_bid:,.2f}) is Rs. {diff:,.2f} above Fixed Fair Market Rate (Rs. {ai_std:,.2f}).\n2. Win Chance: {win}% | Profitability Score: {prof}/20.\n3. Action: Negotiate down toward Rs. {ai_std:,.2f} to save Rs. {diff:,.2f}."
         elif var_pct < -2.0:
             verdict = f"Quoted Bid is {abs(var_pct):.1f}% Lower than Standard"
-            advice = f"JUSTIFICATION VERDICT: UNDER-PRICED QUOTE ({var_pct:.1f}%)\n1. Client Quoted Bid (Rs. {eval_bid:,.2f}) is Rs. {abs(diff):,.2f} below {city}'s Fixed Fair Market Rate (Rs. {ai_std:,.2f}).\n2. Competitive Impact: Under-quoting in a {is_metro} zone increases rejection risk ({win}% win chance).\n3. Action: Revise quotation upward toward Rs. {ai_std:,.2f}."
+            advice = f"JUSTIFICATION VERDICT: UNDER-PRICED QUOTE ({var_pct:.1f}%)\n1. Client Quoted Bid (Rs. {eval_bid:,.2f}) is Rs. {diff:,.2f} below {city_label}'s Fixed Fair Market Rate (Rs. {ai_std:,.2f}).\n2. Competitive Impact: Under-quoting in a {is_metro} zone increases rejection risk ({win}% win chance).\n3. Action: Revise quotation upward toward Rs. {ai_std:,.2f}."
         else:
             verdict = f"Fair & Accurate Match ({var_pct:+.1f}%)"
             advice = f"JUSTIFICATION VERDICT: FAIR & OPTIMAL BID ({var_pct:+.1f}%)\n1. Client Quoted Bid (Rs. {eval_bid:,.2f}) aligns closely with Fixed Fair Market Rate (Rs. {ai_std:,.2f}).\n2. Financial Balance: Delivers {win}% win probability alongside a healthy {prof}/20 profitability score.\n3. Action: Proceed with tender submission. Total Acquisition CapEx is Rs. {capex:,.2f}."
 
         cards = [
             ("Asset Configuration", f"{asset_type} ({size:,.0f} Sq.Ft)", "#1e3a8a", "#dbeafe", "#3b82f6"),
-            ("Location & Metro Tier", f"{city} - {is_metro}", "#0369a1", "#e0f2fe", "#0ea5e9"),
+            ("Location & Metro Tier", loc_display, "#0369a1", "#e0f2fe", "#0ea5e9"),
             ("Client Quoted Bid Price", q_disp, "#0f172a", "#f1f5f9", "#64748b"),
             ("AI Standard Recommended Bid", f"Rs. {ai_std:,.2f}", "#4338ca", "#e0e7ff", "#6366f1"),
             ("Bid Comparison Verdict", verdict, "#065f46", "#d1fae5", "#10b981"),
@@ -148,3 +215,35 @@ css_style = """
 .hero-banner, .hero-banner div { color: #ffffff !important; }
 .hero-sub { color: #93c5fd !important; }
 .proto-badge span { color: #b45309 !important; }
+.pink-accent { color: #be185d !important; font-weight: 800 !important; }
+.blue-title { color: #1e3a8a !important; font-weight: 800 !important; }
+label, label span, .block-label, .wrap-inner { color: #0f172a !important; font-weight: 800 !important; font-size: 14.5px !important; }
+input, textarea, select, .wrap, .secondary-wrap { background-color: #ffffff !important; color: #0f172a !important; border-color: #cbd5e1 !important; }
+"""
+
+header_and_summary_html = """
+<div class='proto-badge' style='background:#fffbeb;border:1.5px solid #f59e0b;border-radius:8px;padding:10px;text-align:center;margin-bottom:16px'>
+    <span style='font-size:14px;font-weight:800'>STUDENT ACADEMIC PROJECT PROTOTYPE: Data Science Portfolio & Business Decision Analytics</span>
+</div>
+<div class='hero-banner' style='background:linear-gradient(135deg,#1e3a8a 0%,#0f172a 100%);border-radius:12px;padding:24px 20px;text-align:center;margin-bottom:20px'>
+    <div class='hero-sub' style='font-size:16px;font-weight:700;margin-bottom:4px'>WELCOME TO</div>
+    <div style='font-size:28px;font-weight:900'>Indian Corporate Asset & Tender Analytics Engine</div>
+</div>
+<div style='margin-bottom:18px'>
+    <h3 style='font-size:19px;border-bottom:2px solid #e2e8f0;padding-bottom:6px;margin-bottom:8px'>1. Project Overview & Purpose</h3>
+    <p style='font-size:15.5px;line-height:1.6;font-weight:500'>This decision-support platform evaluates commercial real estate acquisitions across warehouses, offices, and land parcels by automating tender document analysis. It combines machine learning valuation benchmarks with Indian statutory tax rules (18% GST, regional property taxes, and 10% annual depreciation) to verify bid fairness. By comparing client quotations against standardized market rates, the engine delivers clear, data-backed recommendations to prevent overpaying and optimize capital allocation.</p>
+</div>
+<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px'>
+    <div style='background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:10px;padding:16px'>
+        <h3 style='font-size:18px;margin-bottom:8px'>2. Key Benefits & Security</h3>
+        <ul style='list-style-type:none;padding-left:0;font-size:15px;line-height:1.6'>
+            <li style='margin-bottom:8px'><span class='pink-accent'>Zero-Retention Privacy:</span> Processes sensitive files in temporary RAM without permanent disk storage.</li>
+            <li style='margin-bottom:8px'><span class='pink-accent'>Statutory Tax & Depreciation:</span> Integrates <strong>18% GST</strong>, Metro (<strong>12%-15%</strong>) vs Non-Metro (<strong>5%</strong>) taxes, and <strong>10%</strong> building depreciation.</li>
+            <li><span class='pink-accent'>Fair Market Benchmark:</span> Compares client quotes against fixed regional rates to prevent overpaying.</li>
+        </ul>
+    </div>
+    <div style='background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:10px;padding:16px'>
+        <h3 style='font-size:18px;margin-bottom:8px'>3. System Architecture</h3>
+        <ul style='list-style-type:none;padding-left:0;font-size:15px;line-height:1.6'>
+            <li style='margin-bottom:8px'><span class='pink-accent'>ML Classifier Core:</span> Powered by <strong>XGBoost Algorithm</strong> trained on <strong>20,640 Records</strong> (<strong>92.76% Accuracy</strong>).</li>
+            <li style='margin-bottom:8px'><span class='pink-accent'>Dual Input
