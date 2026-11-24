@@ -1,5 +1,3 @@
-!pip install streamlit pandas numpy scikit-learn folium streamlit-folium
-
 import pandas as pd
 import numpy as np
 from sklearn.datasets import fetch_california_housing
