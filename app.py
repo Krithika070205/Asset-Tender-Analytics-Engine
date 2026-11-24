@@ -60,7 +60,6 @@ print(f"REAL MODEL TEST ACCURACY: {real_accuracy}%")
 print("\nSample Processed Dataset (First 5 Rows):")
 print(df_corp.head())
 
-!pip install -q pypdf openpyxl
 import io, base64, re
 import pandas as pd
 import numpy as np
